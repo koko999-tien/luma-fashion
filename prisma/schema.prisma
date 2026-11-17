@@ -1,0 +1,327 @@
+// LUMA Fashion — Prisma schema
+// Dev: SQLite (file ./dev.db). Production: đổi provider sang "postgresql" + DATABASE_URL.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  role          String    @default("CUSTOMER") // CUSTOMER | ADMIN
+  status        String    @default("ACTIVE") // ACTIVE | BLOCKED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  addresses     Address[]
+  orders        Order[]
+  wishlist      WishlistItem[]
+  reviews       Review[]
+  carts         Cart[]
+  resetTokens   PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Address {
+  id        String  @id @default(cuid())
+  userId    String
+  fullName  String
+  phone     String
+  line      String
+  ward      String?
+  district  String
+  city      String
+  isDefault Boolean @default(false)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  description String?
+  image       String?
+  sort        Int       @default(0)
+  active      Boolean   @default(true)
+  products    Product[]
+}
+
+model Collection {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  description String?
+  image       String?
+  sort        Int       @default(0)
+  active      Boolean   @default(true)
+  isFeatured  Boolean   @default(false)
+  products    Product[]
+}
+
+model Product {
+  id           String          @id @default(cuid())
+  slug         String          @unique
+  name         String
+  description  String
+  material     String?
+  care         String?
+  origin       String?
+  gender       String          // MEN | WOMEN | UNISEX
+  tags         String?         // phân cách bởi dấu phẩy
+  categoryId   String
+  collectionId String?
+  basePrice    Int             // VND, số nguyên
+  salePrice    Int?
+  isNew        Boolean         @default(false)
+  isFeatured   Boolean         @default(false)
+  isBestSeller Boolean         @default(false)
+  status       String          @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  category     Category        @relation(fields: [categoryId], references: [id])
+  collection   Collection?     @relation(fields: [collectionId], references: [id])
+  images       ProductImage[]
+  variants     ProductVariant[]
+  reviews      Review[]
+  wishlist    WishlistItem[]
+
+  @@index([categoryId])
+  @@index([collectionId])
+  @@index([status])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  url       String
+  sort      Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductVariant {
+  id            String                @id @default(cuid())
+  productId     String
+  sku           String                @unique
+  size          String
+  color         String
+  colorHex      String                @default("#111111")
+  stock         Int                   @default(0)
+  priceOverride Int?
+  product       Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  inventoryTx   InventoryTransaction[]
+
+  @@unique([productId, size, color])
+  @@index([productId])
+}
+
+model InventoryTransaction {
+  id           String         @id @default(cuid())
+  variantId    String
+  delta        Int
+  previousQty  Int            @default(0)
+  newQty       Int            @default(0)
+  type         String         @default("MANUAL_ADJUST") // INITIAL | RECEIVED | MANUAL_ADJUST | ORDER_DEDUCTION | ORDER_CANCEL_RESTORE | RETURN_RESTORE
+  reason       String
+  adminId      String?
+  createdAt    DateTime       @default(now())
+  variant      ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+  @@index([type])
+}
+
+// Giỏ hàng phía server: dùng chung cho khách (cookie cartId) và user đã đăng nhập
+model Cart {
+  id        String     @id @default(cuid())
+  cartKey   String     @unique // cookie cart_key hoặc user id khi đã login
+  userId    String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String         @id @default(cuid())
+  cartId    String
+  variantId String
+  quantity  Int
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model Coupon {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   // PERCENT | FIXED
+  value       Int
+  minOrder    Int      @default(0)
+  maxDiscount Int?
+  expiresAt   DateTime?
+  usageLimit  Int?
+  perCustomerLimit Int?
+  usedCount   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  usages      CouponUsage[]
+}
+
+model CouponUsage {
+  id       String  @id @default(cuid())
+  couponId String
+  orderId  String  @unique
+  userId   String?
+  coupon   Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([userId])
+}
+
+model Order {
+  id              String               @id @default(cuid())
+  orderNumber     String               @unique
+  userId          String?
+  customerName    String
+  email           String
+  phone           String
+  addressLine     String
+  ward            String?
+  district        String
+  city            String
+  note            String?
+  shippingMethod  String               // STANDARD | EXPRESS
+  shippingFee     Int
+  paymentMethod   String               // COD | BANK_TRANSFER | VNPAY | MOMO | ZALOPAY
+  paymentStatus   String               @default("UNPAID") // UNPAID | PENDING | PAID | FAILED | REFUNDED
+  orderStatus     String               @default("PENDING") // PENDING | CONFIRMED | PROCESSING | PACKED | SHIPPED | DELIVERED | CANCELLED | RETURNED | REFUNDED
+  subtotal        Int
+  discount        Int                  @default(0)
+  total           Int
+  couponCode      String?
+  adminNote       String?
+  shippingTracking String?            // Mã vận đơn GHN/GHTK… (khi tích hợp)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  user            User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+
+  @@index([userId])
+  @@index([orderStatus])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String          @id @default(cuid())
+  orderId     String
+  variantId   String?
+  productName String
+  sku         String
+  size        String
+  color       String
+  price       Int
+  quantity    Int
+  image       String?
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+}
+
+model OrderStatusHistory {
+  id        String   @id @default(cuid())
+  orderId   String
+  status    String
+  note      String?
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  rating    Int
+  title     String?
+  body      String
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
+model Banner {
+  id          String   @id @default(cuid())
+  headline    String
+  subtext     String?
+  image       String
+  ctaText     String?
+  ctaUrl      String?
+  active      Boolean  @default(true)
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String?
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model NotificationLog {
+  id        String   @id @default(cuid())
+  channel   String   @default("EMAIL") // EMAIL
+  type      String   // ORDER_CONFIRMATION | ORDER_STATUS | PASSWORD_RESET | WELCOME | PAYMENT_CONFIRMED | SHIPPED | DELIVERED | CANCELLED
+  to        String
+  subject   String
+  status    String   // SENT | FAILED | DISABLED
+  error     String?
+  orderId   String?
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([type])
+}
+
